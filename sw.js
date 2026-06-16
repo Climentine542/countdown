@@ -3,12 +3,13 @@
  * 缓存策略：Cache First（优先缓存，离线可用）
  */
 
-const CACHE_NAME = 'countdown-v1';
+const CACHE_NAME = 'countdown-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './css/style.css',
   './js/db.js',
+  './js/lunar.js',
   './js/app.js',
   './icon.svg',
   './manifest.json',

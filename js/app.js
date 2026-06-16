@@ -25,8 +25,15 @@ function getMaxDays(month, year) {
 /**
  * 计算距离目标日期还有多少天
  * 如果今年已过，则自动算到明年
+ * @param {number} month
+ * @param {number} day
+ * @param {string} calendarType - 'solar' | 'lunar'
  */
-function getCountdownDays(month, day) {
+function getCountdownDays(month, day, calendarType) {
+  if (calendarType === 'lunar') {
+    return getLunarCountdownDays(month, day);
+  }
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -53,8 +60,18 @@ function getCountdownDays(month, day) {
 /**
  * 格式化月份和日期为显示文字
  */
-function formatDate(month, day) {
+function formatDate(month, day, calendarType) {
+  if (calendarType === 'lunar') {
+    return formatLunarDate(month, day);
+  }
   return `${month}月${day}日`;
+}
+
+/**
+ * 获取日历类型标签
+ */
+function getCalendarLabel(calendarType) {
+  return calendarType === 'lunar' ? '农历' : '公历';
 }
 
 /**
@@ -76,8 +93,8 @@ function getCountdownText(days) {
  */
 function sortEvents(events) {
   return events.slice().sort((a, b) => {
-    const daysA = getCountdownDays(a.month, a.day);
-    const daysB = getCountdownDays(b.month, b.day);
+    const daysA = getCountdownDays(a.month, a.day, a.calendarType);
+    const daysB = getCountdownDays(b.month, b.day, b.calendarType);
 
     // 特别关心优先
     if (a.isSpecialCare && !b.isSpecialCare) return -1;
@@ -144,7 +161,7 @@ function renderEventGroup(containerId, events) {
   container.innerHTML = '';
 
   events.forEach(event => {
-    const days = getCountdownDays(event.month, event.day);
+    const days = getCountdownDays(event.month, event.day, event.calendarType);
     const card = createEventCard(event, days);
     container.appendChild(card);
   });
@@ -184,8 +201,11 @@ function createEventCard(event, days) {
     </button>
     <div class="card-body">
       <div class="event-name">${escapeHtml(event.name)}</div>
-      <div class="event-date">${formatDate(event.month, event.day)}</div>
-      ${event.isSpecialCare ? '<div class="special-badge">特别关心</div>' : ''}
+      <div class="event-date">${formatDate(event.month, event.day, event.calendarType)}</div>
+      <div class="event-meta">
+        ${event.isSpecialCare ? '<span class="special-badge">特别关心</span>' : ''}
+        <span class="calendar-badge">${getCalendarLabel(event.calendarType)}</span>
+      </div>
     </div>
     <div class="card-right">
       <div class="${daysClass}">${getCountdownText(days)}</div>
@@ -226,6 +246,7 @@ function openAddPanel() {
   document.getElementById('eventName').value = '';
   document.getElementById('eventMonth').value = '';
   document.getElementById('eventDay').value = '';
+  document.getElementById('calendarToggle').classList.remove('active');
   document.getElementById('specialToggle').classList.remove('active');
   document.getElementById('notifyRangeGroup').classList.add('hidden');
   document.getElementById('notifyRange').value = '30';
@@ -245,6 +266,14 @@ async function openEditPanel(id) {
   document.getElementById('eventName').value = event.name;
   document.getElementById('eventMonth').value = event.month;
   document.getElementById('eventDay').value = event.day;
+
+  // 公历/农历切换
+  const calToggle = document.getElementById('calendarToggle');
+  if (event.calendarType === 'lunar') {
+    calToggle.classList.add('active');
+  } else {
+    calToggle.classList.remove('active');
+  }
 
   if (event.isSpecialCare) {
     document.getElementById('specialToggle').classList.add('active');
@@ -292,6 +321,7 @@ async function saveEvent() {
   const name = document.getElementById('eventName').value.trim();
   const month = parseInt(document.getElementById('eventMonth').value);
   const day = parseInt(document.getElementById('eventDay').value);
+  const calendarType = document.getElementById('calendarToggle').classList.contains('active') ? 'lunar' : 'solar';
   const isSpecialCare = document.getElementById('specialToggle').classList.contains('active');
   const notifyRange = parseInt(document.getElementById('notifyRange').value) || 30;
 
@@ -304,10 +334,17 @@ async function saveEvent() {
     showToast('请输入有效的月份 (1-12)');
     return;
   }
-  const maxDay = getMaxDays(month, new Date().getFullYear());
-  if (!day || day < 1 || day > maxDay) {
-    showToast(`请输入有效的日期 (${month}月最多${maxDay}天)`);
-    return;
+  if (calendarType === 'lunar') {
+    if (!day || day < 1 || day > 30) {
+      showToast('农历日期请输入 1-30');
+      return;
+    }
+  } else {
+    const maxDay = getMaxDays(month, new Date().getFullYear());
+    if (!day || day < 1 || day > maxDay) {
+      showToast(`请输入有效的日期 (${month}月最多${maxDay}天)`);
+      return;
+    }
   }
 
   try {
@@ -318,6 +355,7 @@ async function saveEvent() {
         name,
         month,
         day,
+        calendarType,
         isSpecialCare,
         notifyRange,
       });
@@ -328,6 +366,7 @@ async function saveEvent() {
         name,
         month,
         day,
+        calendarType,
         isSpecialCare,
         notifyRange,
       });
@@ -411,7 +450,7 @@ async function checkAndNotify() {
   const specialEvents = events.filter(e => e.isSpecialCare);
 
   for (const event of specialEvents) {
-    const days = getCountdownDays(event.month, event.day);
+    const days = getCountdownDays(event.month, event.day, event.calendarType);
 
     // 判断是否应该通知：个位为0 且 在通知范围内 且 天数>=0
     if (days % 10 !== 0) continue;
@@ -600,6 +639,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 删除
   document.getElementById('deleteBtn').addEventListener('click', deleteCurrentEvent);
+
+  // 公历/农历切换
+  document.getElementById('calendarToggle').addEventListener('click', function() {
+    this.classList.toggle('active');
+  });
 
   // 特别关心切换
   document.getElementById('specialToggle').addEventListener('click', function() {

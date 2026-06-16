@@ -93,6 +93,7 @@ function addEvent(eventData) {
       name: eventData.name.trim(),
       month: eventData.month,
       day: eventData.day,
+      calendarType: eventData.calendarType || 'solar',  // 'solar' | 'lunar'
       isSpecialCare: eventData.isSpecialCare || false,
       notifyRange: eventData.isSpecialCare ? (eventData.notifyRange || 365) : 365,
       createdAt: Date.now(),
@@ -128,6 +129,7 @@ function updateEvent(eventData) {
         name: eventData.name.trim(),
         month: eventData.month,
         day: eventData.day,
+        calendarType: eventData.calendarType || 'solar',
         isSpecialCare: eventData.isSpecialCare,
         notifyRange: eventData.isSpecialCare ? (eventData.notifyRange || 365) : 365,
         updatedAt: Date.now(),

@@ -112,6 +112,17 @@
         <div class="day-hint" id="dayHint"></div>
       </div>
 
+      <!-- 公历/农历切换 -->
+      <div class="form-group">
+        <div class="toggle-row" id="calendarToggle">
+          <div class="toggle-label">
+            <span class="toggle-star">📅</span>
+            <span class="toggle-text">使用农历</span>
+          </div>
+          <div class="toggle-indicator"></div>
+        </div>
+      </div>
+
       <!-- 特别关心开关 -->
       <div class="form-group">
         <div class="toggle-row" id="specialToggle">
@@ -148,6 +159,7 @@
   <div class="toast" id="toast"></div>
 
   <!-- ==================== JS ==================== -->
+  <script src="js/lunar.js"></script>
   <script src="js/db.js"></script>
   <script src="js/app.js"></script>
 </body>
