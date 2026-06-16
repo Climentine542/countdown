@@ -199,8 +199,8 @@ body {
 /* 星标按钮 */
 .star-btn {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 14px;
+  left: 14px;
   background: none;
   border: none;
   cursor: pointer;
@@ -227,7 +227,7 @@ body {
 .card-body {
   flex: 1;
   min-width: 0;
-  padding-right: 36px;
+  padding-left: 42px;
 }
 
 .event-name {
