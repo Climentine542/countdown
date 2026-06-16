@@ -103,9 +103,15 @@
             <span class="date-unit">月</span>
           </div>
           <span class="date-separator">—</span>
-          <div class="date-input-group">
+          <!-- 公历日期（数字输入） -->
+          <div class="date-input-group" id="solarDayGroup">
             <input type="number" class="date-input" id="eventDay"
                    placeholder="1" min="1" max="31" inputmode="numeric">
+            <span class="date-unit">日</span>
+          </div>
+          <!-- 农历日期（下拉选择） -->
+          <div class="date-input-group hidden" id="lunarDayGroup">
+            <select class="date-input lunar-day-select" id="eventDayLunar"></select>
             <span class="date-unit">日</span>
           </div>
         </div>
@@ -113,7 +119,7 @@
       </div>
 
       <!-- 公历/农历切换 -->
-      <div class="form-group">
+      <div class="form-group" id="calendarToggleGroup">
         <div class="toggle-row" id="calendarToggle">
           <div class="toggle-label">
             <span class="toggle-star">📅</span>
@@ -121,6 +127,7 @@
           </div>
           <div class="toggle-indicator"></div>
         </div>
+        <div class="toggle-lock-hint hidden" id="calendarLockHint">创建后不可更改</div>
       </div>
 
       <!-- 特别关心开关 -->

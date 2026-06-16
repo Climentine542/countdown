@@ -2,6 +2,57 @@
  * 倒计时 - 主应用逻辑
  */
 
+// ==================== 农历日期名称 ====================
+
+const LUNAR_DAY_NAMES = [
+  '初一', '初二', '初三', '初四', '初五',
+  '初六', '初七', '初八', '初九', '初十',
+  '十一', '十二', '十三', '十四', '十五',
+  '十六', '十七', '十八', '十九', '二十',
+  '廿一', '廿二', '廿三', '廿四', '廿五',
+  '廿六', '廿七', '廿八', '廿九', '三十'
+];
+
+/**
+ * 填充农历日期下拉选择器
+ */
+function populateLunarDaySelect() {
+  const select = document.getElementById('eventDayLunar');
+  if (select.options.length > 0) return; // 已填充
+  select.innerHTML = '<option value="">请选择日期</option>';
+  LUNAR_DAY_NAMES.forEach((name, index) => {
+    const option = document.createElement('option');
+    option.value = index + 1;
+    option.textContent = name;
+    select.appendChild(option);
+  });
+}
+
+/**
+ * 根据日历类型切换日期输入方式
+ * @param {string} calendarType - 'solar' | 'lunar'
+ */
+function swapDayInput(calendarType) {
+  const solarGroup = document.getElementById('solarDayGroup');
+  const lunarGroup = document.getElementById('lunarDayGroup');
+  const dayHint = document.getElementById('dayHint');
+  const monthInput = document.getElementById('eventMonth');
+
+  if (calendarType === 'lunar') {
+    solarGroup.classList.add('hidden');
+    lunarGroup.classList.remove('hidden');
+    populateLunarDaySelect();
+    monthInput.setAttribute('placeholder', '1');
+    dayHint.textContent = '农历每月29或30天，如选30天而该月仅有29天则自动调整';
+    dayHint.style.color = 'var(--text-hint)';
+  } else {
+    lunarGroup.classList.add('hidden');
+    solarGroup.classList.remove('hidden');
+    monthInput.setAttribute('placeholder', '1');
+    updateDayOptions();
+  }
+}
+
 // ==================== 日期计算 ====================
 
 /**
@@ -108,6 +159,7 @@ function sortEvents(events) {
 // ==================== UI 渲染 ====================
 
 let currentEditId = null; // 当前正在编辑的事件ID（null = 新增模式）
+let calendarToggleLocked = false; // 编辑模式下锁定公历/农历切换
 
 /**
  * 渲染整个事件列表
@@ -242,15 +294,22 @@ function escapeHtml(text) {
  */
 function openAddPanel() {
   currentEditId = null;
+  calendarToggleLocked = false;
   document.getElementById('panelTitle').textContent = '添加事件';
   document.getElementById('eventName').value = '';
   document.getElementById('eventMonth').value = '';
   document.getElementById('eventDay').value = '';
+  document.getElementById('eventDayLunar').value = '';
   document.getElementById('calendarToggle').classList.remove('active');
+  document.getElementById('calendarToggle').classList.remove('locked');
+  document.getElementById('calendarLockHint').classList.add('hidden');
   document.getElementById('specialToggle').classList.remove('active');
   document.getElementById('notifyRangeGroup').classList.add('hidden');
   document.getElementById('notifyRange').value = '30';
   document.getElementById('deleteBtn').classList.add('hidden');
+  document.getElementById('dayHint').textContent = '';
+  // 默认显示公历日期输入
+  swapDayInput('solar');
   showPanel();
 }
 
@@ -262,17 +321,25 @@ async function openEditPanel(id) {
   if (!event) return;
 
   currentEditId = id;
+  calendarToggleLocked = true;
   document.getElementById('panelTitle').textContent = '编辑事件';
   document.getElementById('eventName').value = event.name;
   document.getElementById('eventMonth').value = event.month;
-  document.getElementById('eventDay').value = event.day;
 
-  // 公历/农历切换
+  // 显示对应的日期输入方式，并锁定
   const calToggle = document.getElementById('calendarToggle');
+  const lockHint = document.getElementById('calendarLockHint');
+  calToggle.classList.add('locked');
+  lockHint.classList.remove('hidden');
+
   if (event.calendarType === 'lunar') {
     calToggle.classList.add('active');
+    swapDayInput('lunar');
+    document.getElementById('eventDayLunar').value = event.day;
   } else {
     calToggle.classList.remove('active');
+    swapDayInput('solar');
+    document.getElementById('eventDay').value = event.day;
   }
 
   if (event.isSpecialCare) {
@@ -312,6 +379,7 @@ function hidePanel() {
   overlay.classList.remove('active');
   panel.classList.remove('active');
   currentEditId = null;
+  calendarToggleLocked = false;
 }
 
 /**
@@ -320,8 +388,16 @@ function hidePanel() {
 async function saveEvent() {
   const name = document.getElementById('eventName').value.trim();
   const month = parseInt(document.getElementById('eventMonth').value);
-  const day = parseInt(document.getElementById('eventDay').value);
   const calendarType = document.getElementById('calendarToggle').classList.contains('active') ? 'lunar' : 'solar';
+
+  // 从对应的日期输入框读取日期
+  let day;
+  if (calendarType === 'lunar') {
+    day = parseInt(document.getElementById('eventDayLunar').value);
+  } else {
+    day = parseInt(document.getElementById('eventDay').value);
+  }
+
   const isSpecialCare = document.getElementById('specialToggle').classList.contains('active');
   const notifyRange = parseInt(document.getElementById('notifyRange').value) || 30;
 
@@ -336,7 +412,7 @@ async function saveEvent() {
   }
   if (calendarType === 'lunar') {
     if (!day || day < 1 || day > 30) {
-      showToast('农历日期请输入 1-30');
+      showToast('请选择农历日期');
       return;
     }
   } else {
@@ -544,11 +620,22 @@ function scheduleNextCheck() {
  */
 function updateDayOptions() {
   const monthInput = document.getElementById('eventMonth');
-  const dayInput = document.getElementById('eventDay');
   const month = parseInt(monthInput.value);
+  const calendarType = document.getElementById('calendarToggle').classList.contains('active') ? 'lunar' : 'solar';
+  const dayHint = document.getElementById('dayHint');
 
   if (!month || month < 1 || month > 12) return;
 
+  if (calendarType === 'lunar') {
+    // 农历模式：显示农历日期提示
+    if (dayHint) {
+      dayHint.textContent = '请从下拉列表中选择农历日期';
+    }
+    return;
+  }
+
+  // 公历模式
+  const dayInput = document.getElementById('eventDay');
   const maxDays = getMaxDays(month, new Date().getFullYear());
 
   // 如果当前天数超出范围，调整
@@ -561,8 +648,6 @@ function updateDayOptions() {
   dayInput.setAttribute('max', maxDays);
   dayInput.setAttribute('placeholder', `1-${maxDays}`);
 
-  // 显示提示文字
-  const dayHint = document.getElementById('dayHint');
   if (dayHint) {
     dayHint.textContent = `${month}月最多${maxDays}天`;
   }
@@ -642,7 +727,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 公历/农历切换
   document.getElementById('calendarToggle').addEventListener('click', function() {
+    // 编辑模式下不允许切换
+    if (calendarToggleLocked) {
+      showToast('创建后不可更改公历/农历');
+      return;
+    }
     this.classList.toggle('active');
+    const isLunar = this.classList.contains('active');
+    swapDayInput(isLunar ? 'lunar' : 'solar');
+    // 清空日期输入
+    if (isLunar) {
+      document.getElementById('eventDayLunar').value = '';
+    } else {
+      document.getElementById('eventDay').value = '';
+    }
   });
 
   // 特别关心切换
