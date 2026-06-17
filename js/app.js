@@ -269,9 +269,16 @@ function createEventCard(event, days) {
   const starBtn = card.querySelector('.star-btn');
   starBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    // 如果是开启特别关心，先检查/请求通知权限
+    if (!event.isSpecialCare && getNotificationPermission() === 'default') {
+      await requestNotificationPermission();
+    }
     await toggleSpecialCare(event.id);
     await renderEventList();
-    // 如果特别关心状态改变，重新检查通知
+    // 立即检查通知，并安排后续
+    if (getNotificationPermission() === 'granted') {
+      await checkAndNotify();
+    }
     scheduleNextCheck();
   });
 
@@ -424,6 +431,14 @@ async function saveEvent() {
   }
 
   try {
+    // 如果保存的是特别关心事件，且通知权限未授予，先请求权限
+    if (isSpecialCare && getNotificationPermission() === 'default') {
+      const perm = await requestNotificationPermission();
+      if (perm !== 'granted') {
+        showToast('通知权限未开启，请在浏览器设置中允许通知');
+      }
+    }
+
     if (currentEditId) {
       // 更新
       await updateEvent({
@@ -451,6 +466,10 @@ async function saveEvent() {
 
     hidePanel();
     await renderEventList();
+    // 保存后立即检查通知（尤其是新建特别关心事件时）
+    if (isSpecialCare && getNotificationPermission() === 'granted') {
+      await checkAndNotify();
+    }
     scheduleNextCheck();
   } catch (err) {
     console.error('保存失败:', err);
@@ -503,51 +522,108 @@ let notificationPermission = 'default';
 let checkTimer = null;
 
 /**
- * 请求通知权限
+ * 获取当前通知权限（实时查询，不使用缓存）
+ */
+function getNotificationPermission() {
+  if (!('Notification' in window)) return 'denied';
+  return Notification.permission;
+}
+
+/**
+ * 请求通知权限（必须在用户手势中调用）
  */
 async function requestNotificationPermission() {
   if (!('Notification' in window)) {
     console.log('此浏览器不支持通知');
-    return;
+    return 'denied';
   }
 
-  const permission = await Notification.requestPermission();
-  notificationPermission = permission;
-  return permission;
+  // 如果已经授权，直接返回
+  if (Notification.permission === 'granted') {
+    notificationPermission = 'granted';
+    return 'granted';
+  }
+
+  // 如果是 denied，无法再请求（用户需手动在浏览器设置中修改）
+  if (Notification.permission === 'denied') {
+    console.log('通知权限已被拒绝，请到浏览器设置中开启');
+    return 'denied';
+  }
+
+  // 只有 'default' 状态才能请求
+  try {
+    const permission = await Notification.requestPermission();
+    notificationPermission = permission;
+    console.log(`通知权限请求结果: ${permission}`);
+    return permission;
+  } catch (err) {
+    console.error('请求通知权限失败:', err);
+    return 'denied';
+  }
 }
 
 /**
  * 检查是否需要发送通知
  */
 async function checkAndNotify() {
-  if (notificationPermission !== 'granted') return;
+  // 实时检查权限，不使用缓存变量
+  if (getNotificationPermission() !== 'granted') {
+    console.log('通知权限未授予，跳过检查');
+    return;
+  }
 
   const events = await getAllEvents();
   const specialEvents = events.filter(e => e.isSpecialCare);
 
+  if (specialEvents.length === 0) {
+    console.log('没有特别关心事件，跳过通知检查');
+    return;
+  }
+
+  console.log(`检查 ${specialEvents.length} 个特别关心事件的通知...`);
+
   for (const event of specialEvents) {
     const days = getCountdownDays(event.month, event.day, event.calendarType);
 
+    console.log(`  ${event.name}: 倒计时 ${days} 天, 通知范围 ${event.notifyRange}天`);
+
     // 判断是否应该通知：个位为0 且 在通知范围内 且 天数>=0
-    if (days % 10 !== 0) continue;
-    if (days > event.notifyRange) continue;
-    if (days < 0) continue;
+    if (days % 10 !== 0) {
+      console.log(`    → 跳过 (天数个位不是0)`);
+      continue;
+    }
+    if (days > event.notifyRange) {
+      console.log(`    → 跳过 (超出通知范围)`);
+      continue;
+    }
+    if (days < 0) {
+      console.log(`    → 跳过 (已过期)`);
+      continue;
+    }
 
     // 检查是否已经通知过
     const alreadyNotified = await hasNotified(event.id, days);
-    if (alreadyNotified) continue;
+    if (alreadyNotified) {
+      console.log(`    → 今天已通知过，跳过`);
+      continue;
+    }
 
     // 发送通知
-    sendNotification(event, days);
-    await recordNotification(event.id, days, event.name);
+    const sent = sendNotification(event, days);
+    if (sent) {
+      await recordNotification(event.id, days, event.name);
+      console.log(`    → ✅ 通知已发送`);
+    }
   }
 }
 
 /**
  * 发送单条通知
+ * @returns {boolean} 是否发送成功
  */
 function sendNotification(event, days) {
-  if (!('Notification' in window)) return;
+  if (!('Notification' in window)) return false;
+  if (Notification.permission !== 'granted') return false;
 
   let title, body;
   if (days === 0) {
@@ -555,7 +631,7 @@ function sendNotification(event, days) {
     body = `「${event.name}」就在今天！`;
   } else {
     title = `⏰ 倒计时 ${days} 天`;
-    body = `「${event.name}」还有 ${days} 天（${formatDate(event.month, event.day)}）`;
+    body = `「${event.name}」还有 ${days} 天（${formatDate(event.month, event.day, event.calendarType)}）`;
   }
 
   const options = {
@@ -569,10 +645,12 @@ function sendNotification(event, days) {
   };
 
   try {
-    new Notification(title, options);
+    const notif = new Notification(title, options);
     console.log(`通知已发送: ${event.name} - ${days}天`);
+    return true;
   } catch (e) {
     console.error('发送通知失败:', e);
+    return false;
   }
 }
 
@@ -678,23 +756,43 @@ async function init() {
     // 2. 渲染列表
     await renderEventList();
 
-    // 3. 请求通知权限
-    const perm = await requestNotificationPermission();
-    if (perm === 'granted') {
-      // 立即检查一次今天的通知
-      await checkAndNotify();
-      // 安排后续检查
-      scheduleNextCheck();
+    // 3. 初始化通知权限状态
+    if ('Notification' in window) {
+      notificationPermission = Notification.permission;
+      console.log(`当前通知权限: ${notificationPermission}`);
+
+      // 如果已授权，立即检查并安排后续
+      if (Notification.permission === 'granted') {
+        console.log('通知已授权，开始检查...');
+        await checkAndNotify();
+        scheduleNextCheck();
+      } else if (Notification.permission === 'default') {
+        // 权限未决定，尝试请求（部分浏览器允许非手势调用）
+        console.log('通知权限未决定，尝试请求...');
+        const perm = await requestNotificationPermission();
+        if (perm === 'granted') {
+          await checkAndNotify();
+          scheduleNextCheck();
+        } else {
+          console.log('通知权限未获取，将在用户创建特别关心事件时再次请求');
+        }
+      } else {
+        console.log('通知权限已被拒绝，请到系统设置中开启');
+      }
+    } else {
+      console.log('此浏览器不支持通知');
     }
 
     // 4. 注册 Service Worker
     registerServiceWorker();
 
-    // 5. 监听页面可见性变化，重新可见时刷新
+    // 5. 监听页面可见性变化，重新可见时刷新列表并检查通知
     document.addEventListener('visibilitychange', async () => {
       if (document.visibilityState === 'visible') {
+        console.log('页面可见，刷新列表并检查通知...');
         await renderEventList();
-        if (notificationPermission === 'granted') {
+        // 实时检查权限并尝试通知
+        if (getNotificationPermission() === 'granted') {
           await checkAndNotify();
           scheduleNextCheck();
         }
