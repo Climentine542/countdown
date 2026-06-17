@@ -635,6 +635,10 @@ async function sendNotification(event, days) {
  * 显示通知权限请求面板
  * @param {string} reason - 'default' 首次请求 | 'denied' 已被拒绝
  */
+/**
+ * 显示通知权限请求面板
+ * @param {string} reason - 'default' 首次请求 | 'denied' 已被拒绝
+ */
 function showPermissionPanel(reason) {
   const overlay = document.getElementById('overlay');
   const panel = document.getElementById('permissionPanel');
@@ -649,14 +653,29 @@ function showPermissionPanel(reason) {
 
   if (reason === 'denied') {
     title.textContent = '通知已被关闭';
-    desc.innerHTML = '该网站的<strong>站点级</strong>通知权限被关闭了。<br>全局Edge设置开启并不生效，需要单独允许本站。';
+    desc.innerHTML = '该网站的<strong>站点级</strong>通知权限被拒绝。<br>全局浏览器通知开关和站点权限是两回事。';
 
-    // 根据运行模式显示不同的操作指引
+    // 检测运行环境
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    if (isStandalone) {
-      hint.innerHTML = '<strong>如何开启（已安装应用）：</strong><br>① 打开系统「设置」→「应用」<br>② 找到「倒计时」应用<br>③ 点击「通知」→ 改为「允许」<br>④ 回到应用点击上方按钮';
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
+    if (isStandalone && isAndroid) {
+      // Android PWA 已安装
+      hint.innerHTML = '<strong>尝试以下路径（因手机品牌而异）：</strong><br>'
+        + '① 长按桌面上的"倒计时"图标 → ⓘ 应用信息 → 通知 → 允许<br>'
+        + '② 或：设置 → 应用 → 搜索"Edge" → 通知 → 找到本站 → 允许<br>'
+        + '③ 或：设置 → 应用 → 搜索"倒计时" → 通知 → 允许';
+    } else if (isAndroid) {
+      // Android 浏览器
+      hint.innerHTML = '<strong>尝试以下路径：</strong><br>'
+        + '① Edge 菜单(···) → ⚙ 设置 → 站点权限 → 通知 → 找到 climentine542.github.io → 允许<br>'
+        + '② 或：Edge 菜单 → 信息图标(i) → 网站权限 → 通知 → 允许';
     } else {
-      hint.innerHTML = '<strong>如何开启（浏览器）：</strong><br>① 点击地址栏左侧的 🔒 图标<br>② 找到「通知」一项<br>③ 改为「允许」<br>④ 回到此页面点击上方按钮';
+      // 桌面端
+      hint.innerHTML = '<strong>如何开启：</strong><br>'
+        + '① 点击地址栏左侧的 🔒 或 ⓘ 图标<br>'
+        + '② 找到「通知」→ 改为「允许」<br>'
+        + '③ 刷新页面后再试';
     }
 
     actionBtn.textContent = '已开启，重新检测';
@@ -690,25 +709,42 @@ async function handlePermAction() {
   console.log('[权限面板] 当前权限:', currentPerm);
 
   if (currentPerm === 'denied') {
-    // 用户可能已经去设置中开启了，重新检测
-    // 注意：Notification.permission 是实时读取的，但有些浏览器会缓存
-    // 尝试再次调用 requestPermission，看权限是否已恢复
+    // 用户可能已经去设置中开启了，重新调用 API
+    // 有些浏览器在用户手动改回「允许」后，requestPermission() 可以再次弹窗
     try {
       const perm = await Notification.requestPermission();
       console.log('[权限面板] 重新请求结果:', perm);
+      notificationPermission = perm;
+
       if (perm === 'granted') {
-        notificationPermission = 'granted';
         hidePermissionPanel();
         showToast('✅ 通知权限已恢复');
         await sendTestNotificationInner();
         return;
       }
+      if (perm === 'default') {
+        // 权限从 denied 变成了 default（用户清除了设置）
+        // 再调一次就会弹出浏览器原生弹窗
+        const perm2 = await Notification.requestPermission();
+        notificationPermission = perm2;
+        if (perm2 === 'granted') {
+          hidePermissionPanel();
+          showToast('✅ 通知权限已开启');
+          await sendTestNotificationInner();
+          return;
+        }
+        if (perm2 === 'denied') {
+          // 又拒绝了，更新面板
+          showPermissionPanel('denied');
+          return;
+        }
+      }
     } catch (e) {
       console.log('[权限面板] 重新请求异常:', e);
     }
 
-    // 仍然是 denied
-    showToast('⚠️ 权限仍为关闭状态，请确认已允许本站通知');
+    // 仍然是 denied，提示用户
+    showToast('⚠️ 权限仍未开启，请参照面板中的指引操作');
     return;
   }
 
@@ -718,6 +754,7 @@ async function handlePermAction() {
     hidePermissionPanel();
     await sendTestNotificationInner();
   }
+  // denied → requestNotificationPermission 内部会更新面板为 denied 模式
 }
 
 /**
