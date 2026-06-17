@@ -134,6 +134,28 @@ body {
   backdrop-filter: blur(4px);
 }
 
+/* 测试通知按钮 */
+.notify-test-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(4px);
+}
+
+.notify-test-btn:active {
+  background: rgba(255, 255, 255, 0.4);
+  transform: scale(0.9);
+}
+
 /* ==================== 主内容区 ==================== */
 .main-content {
   padding: 16px 16px calc(100px + var(--safe-bottom));

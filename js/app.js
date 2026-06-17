@@ -520,6 +520,7 @@ function showToast(message) {
 
 let notificationPermission = 'default';
 let checkTimer = null;
+let swRegistration = null; // Service Worker 注册引用（用于 showNotification）
 
 /**
  * 获取当前通知权限（实时查询，不使用缓存）
@@ -535,6 +536,7 @@ function getNotificationPermission() {
 async function requestNotificationPermission() {
   if (!('Notification' in window)) {
     console.log('此浏览器不支持通知');
+    showToast('此浏览器不支持通知功能');
     return 'denied';
   }
 
@@ -544,9 +546,10 @@ async function requestNotificationPermission() {
     return 'granted';
   }
 
-  // 如果是 denied，无法再请求（用户需手动在浏览器设置中修改）
+  // 如果是 denied，引导用户去设置中开启
   if (Notification.permission === 'denied') {
     console.log('通知权限已被拒绝，请到浏览器设置中开启');
+    showToast('通知权限已被拒绝，请到系统设置中为浏览器开启通知权限');
     return 'denied';
   }
 
@@ -555,10 +558,118 @@ async function requestNotificationPermission() {
     const permission = await Notification.requestPermission();
     notificationPermission = permission;
     console.log(`通知权限请求结果: ${permission}`);
+    if (permission === 'granted') {
+      showToast('✅ 通知权限已开启');
+    } else if (permission === 'denied') {
+      showToast('❌ 通知权限被拒绝，请到系统设置中开启');
+    }
     return permission;
   } catch (err) {
     console.error('请求通知权限失败:', err);
+    showToast('请求通知权限失败，请重试');
     return 'denied';
+  }
+}
+
+/**
+ * 通过 Service Worker 发送通知
+ * SW 通知可以出现在锁屏、通知中心，即使页面关闭也能显示
+ * @returns {Promise<boolean>} 是否发送成功
+ */
+async function sendNotification(event, days) {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission !== 'granted') return false;
+
+  // 确保 Service Worker 已就绪
+  if (!swRegistration) {
+    console.warn('Service Worker 未就绪，尝试获取...');
+    try {
+      swRegistration = await navigator.serviceWorker.ready;
+    } catch (e) {
+      console.error('无法获取 Service Worker:', e);
+      return false;
+    }
+  }
+
+  let title, body;
+  if (days === 0) {
+    title = '🎉 就是今天！';
+    body = `「${event.name}」就在今天！`;
+  } else {
+    title = `⏰ 倒计时 ${days} 天`;
+    body = `「${event.name}」还有 ${days} 天（${formatDate(event.month, event.day, event.calendarType)}）`;
+  }
+
+  const options = {
+    body: body,
+    icon: 'icon.svg',
+    badge: 'icon.svg',
+    tag: `countdown-${event.id}-${days}`,
+    renotify: true,
+    requireInteraction: days === 0,
+    vibrate: [200, 100, 200],
+    // 以下选项让通知在锁屏/通知中心更显眼
+    silent: false,
+    data: {
+      eventId: event.id,
+      eventName: event.name,
+      days: days,
+    },
+  };
+
+  try {
+    await swRegistration.showNotification(title, options);
+    console.log(`通知已发送(SW): ${event.name} - ${days}天`);
+    return true;
+  } catch (e) {
+    console.error('发送通知失败:', e);
+    return false;
+  }
+}
+
+/**
+ * 发送测试通知（点击铃铛按钮时调用）
+ */
+async function sendTestNotification() {
+  // 先检查/请求权限
+  if (getNotificationPermission() !== 'granted') {
+    const perm = await requestNotificationPermission();
+    if (perm !== 'granted') {
+      return;
+    }
+  }
+
+  // 确保 SW 就绪
+  if (!swRegistration) {
+    try {
+      swRegistration = await navigator.serviceWorker.ready;
+    } catch (e) {
+      console.error('无法获取 Service Worker:', e);
+      showToast('通知服务未就绪，请刷新页面后重试');
+      return;
+    }
+  }
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  try {
+    await swRegistration.showNotification('🔔 测试通知', {
+      body: `倒计时应用通知功能正常！\n发送时间：${timeStr}`,
+      icon: 'icon.svg',
+      badge: 'icon.svg',
+      tag: 'test-notification',
+      renotify: true,
+      requireInteraction: false,
+      vibrate: [200, 100, 200, 100, 200],
+      silent: false,
+      data: { isTest: true },
+    });
+    showToast('✅ 测试通知已发送，请查看通知中心');
+    console.log('测试通知已发送');
+  } catch (e) {
+    console.error('测试通知发送失败:', e);
+    showToast('❌ 发送失败：' + e.message);
   }
 }
 
@@ -609,48 +720,11 @@ async function checkAndNotify() {
     }
 
     // 发送通知
-    const sent = sendNotification(event, days);
+    const sent = await sendNotification(event, days);
     if (sent) {
       await recordNotification(event.id, days, event.name);
       console.log(`    → ✅ 通知已发送`);
     }
-  }
-}
-
-/**
- * 发送单条通知
- * @returns {boolean} 是否发送成功
- */
-function sendNotification(event, days) {
-  if (!('Notification' in window)) return false;
-  if (Notification.permission !== 'granted') return false;
-
-  let title, body;
-  if (days === 0) {
-    title = '🎉 就是今天！';
-    body = `「${event.name}」就在今天！`;
-  } else {
-    title = `⏰ 倒计时 ${days} 天`;
-    body = `「${event.name}」还有 ${days} 天（${formatDate(event.month, event.day, event.calendarType)}）`;
-  }
-
-  const options = {
-    body: body,
-    icon: 'icon.svg',
-    badge: 'icon.svg',
-    tag: `countdown-${event.id}-${days}`,
-    renotify: false,
-    requireInteraction: days === 0,
-    vibrate: [200, 100, 200],
-  };
-
-  try {
-    const notif = new Notification(title, options);
-    console.log(`通知已发送: ${event.name} - ${days}天`);
-    return true;
-  } catch (e) {
-    console.error('发送通知失败:', e);
-    return false;
   }
 }
 
@@ -733,15 +807,27 @@ function updateDayOptions() {
 
 // ==================== Service Worker 注册 ====================
 
-function registerServiceWorker() {
+async function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js')
-      .then(reg => {
-        console.log('Service Worker 注册成功:', reg.scope);
-      })
-      .catch(err => {
-        console.warn('Service Worker 注册失败:', err);
+    try {
+      swRegistration = await navigator.serviceWorker.register('sw.js');
+      console.log('Service Worker 注册成功:', swRegistration.scope);
+
+      // 监听 SW 更新
+      swRegistration.addEventListener('updatefound', () => {
+        const newWorker = swRegistration.installing;
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('新版本已缓存，刷新页面后生效');
+            }
+          });
+        }
       });
+    } catch (err) {
+      console.warn('Service Worker 注册失败:', err);
+      swRegistration = null;
+    }
   }
 }
 
@@ -783,8 +869,8 @@ async function init() {
       console.log('此浏览器不支持通知');
     }
 
-    // 4. 注册 Service Worker
-    registerServiceWorker();
+    // 4. 注册 Service Worker（先注册，通知依赖 SW）
+    await registerServiceWorker();
 
     // 5. 监听页面可见性变化，重新可见时刷新列表并检查通知
     document.addEventListener('visibilitychange', async () => {
@@ -873,6 +959,9 @@ document.addEventListener('DOMContentLoaded', () => {
       hidePanel();
     }
   }, { passive: true });
+
+  // 测试通知按钮
+  document.getElementById('notifyTestBtn').addEventListener('click', sendTestNotification);
 
   // 启动应用
   init();
