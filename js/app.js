@@ -649,8 +649,17 @@ function showPermissionPanel(reason) {
 
   if (reason === 'denied') {
     title.textContent = '通知已被关闭';
-    desc.textContent = '之前拒绝了通知权限，需要手动开启。\n特别关心事件的倒计时提醒需要通知功能。';
-    actionBtn.textContent = '重新开启通知';
+    desc.innerHTML = '该网站的<strong>站点级</strong>通知权限被关闭了。<br>全局Edge设置开启并不生效，需要单独允许本站。';
+
+    // 根据运行模式显示不同的操作指引
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    if (isStandalone) {
+      hint.innerHTML = '<strong>如何开启（已安装应用）：</strong><br>① 打开系统「设置」→「应用」<br>② 找到「倒计时」应用<br>③ 点击「通知」→ 改为「允许」<br>④ 回到应用点击上方按钮';
+    } else {
+      hint.innerHTML = '<strong>如何开启（浏览器）：</strong><br>① 点击地址栏左侧的 🔒 图标<br>② 找到「通知」一项<br>③ 改为「允许」<br>④ 回到此页面点击上方按钮';
+    }
+
+    actionBtn.textContent = '已开启，重新检测';
     actionBtn.classList.add('btn-outline');
     hint.classList.remove('hidden');
   } else {
@@ -678,13 +687,28 @@ function hidePermissionPanel() {
  */
 async function handlePermAction() {
   const currentPerm = getNotificationPermission();
+  console.log('[权限面板] 当前权限:', currentPerm);
 
   if (currentPerm === 'denied') {
-    // 已经拒绝了，再次尝试请求（用户可能已经去设置中开启了）
-    // Notification.requestPermission() 在 denied 状态下不会弹窗，直接返回 denied
-    // 所以引导用户去设置，然后关闭面板，让用户再点铃铛测试
-    showToast('请先在浏览器站点设置中允许通知，再回来点击🔔测试');
-    hidePermissionPanel();
+    // 用户可能已经去设置中开启了，重新检测
+    // 注意：Notification.permission 是实时读取的，但有些浏览器会缓存
+    // 尝试再次调用 requestPermission，看权限是否已恢复
+    try {
+      const perm = await Notification.requestPermission();
+      console.log('[权限面板] 重新请求结果:', perm);
+      if (perm === 'granted') {
+        notificationPermission = 'granted';
+        hidePermissionPanel();
+        showToast('✅ 通知权限已恢复');
+        await sendTestNotificationInner();
+        return;
+      }
+    } catch (e) {
+      console.log('[权限面板] 重新请求异常:', e);
+    }
+
+    // 仍然是 denied
+    showToast('⚠️ 权限仍为关闭状态，请确认已允许本站通知');
     return;
   }
 
@@ -692,10 +716,8 @@ async function handlePermAction() {
   const perm = await requestNotificationPermission();
   if (perm === 'granted') {
     hidePermissionPanel();
-    // 权限获取成功，发送测试通知
     await sendTestNotificationInner();
   }
-  // denied → requestNotificationPermission 内部会更新面板为 denied 模式
 }
 
 /**
