@@ -532,13 +532,14 @@ function getNotificationPermission() {
 
 /**
  * 请求通知权限（必须在用户手势中调用）
+ * 如果权限是 denied，不会调用浏览器弹窗，而是显示自定义面板
  */
 async function requestNotificationPermission() {
   console.log('[通知] 开始请求权限，当前状态:', Notification.permission);
 
   if (!('Notification' in window)) {
     console.log('[通知] 此浏览器不支持 Notification API');
-    alert('此浏览器不支持通知功能');
+    showToast('此浏览器不支持通知功能');
     return 'denied';
   }
 
@@ -549,18 +550,14 @@ async function requestNotificationPermission() {
     return 'granted';
   }
 
-  // 如果是 denied，引导用户去设置中开启
+  // 如果是 denied，无法通过 API 请求，显示面板引导手动开启
   if (Notification.permission === 'denied') {
-    console.log('[通知] 权限已被拒绝');
-    showToast('⚠️ 通知权限已被拒绝');
-    // 延迟弹窗，让 toast 先显示
-    setTimeout(() => {
-      alert('通知权限已被拒绝。\n\n请在系统设置中为浏览器开启通知权限：\n设置 → 应用 → 浏览器 → 通知 → 允许');
-    }, 300);
+    console.log('[通知] 权限已被拒绝，显示权限面板');
+    showPermissionPanel('denied');
     return 'denied';
   }
 
-  // 只有 'default' 状态才能请求
+  // 只有 'default' 状态才能调用浏览器 API 弹窗
   try {
     console.log('[通知] 调用 Notification.requestPermission()...');
     const permission = await Notification.requestPermission();
@@ -569,15 +566,12 @@ async function requestNotificationPermission() {
     if (permission === 'granted') {
       showToast('✅ 通知权限已开启');
     } else if (permission === 'denied') {
-      showToast('❌ 通知权限被拒绝');
-      setTimeout(() => {
-        alert('通知权限被拒绝。\n\n如需开启，请到系统设置中修改：\n设置 → 应用 → 浏览器 → 通知 → 允许');
-      }, 300);
+      showPermissionPanel('denied');
     }
     return permission;
   } catch (err) {
     console.error('[通知] requestPermission 异常:', err);
-    alert('请求通知权限失败：' + err.message + '\n\n请检查浏览器是否支持通知功能。');
+    showToast('请求通知权限失败，请重试');
     return 'denied';
   }
 }
@@ -638,27 +632,82 @@ async function sendNotification(event, days) {
 }
 
 /**
- * 发送测试通知（点击铃铛按钮时调用）
- * 这是诊断通知问题的入口函数
+ * 显示通知权限请求面板
+ * @param {string} reason - 'default' 首次请求 | 'denied' 已被拒绝
  */
-async function sendTestNotification() {
+function showPermissionPanel(reason) {
+  const overlay = document.getElementById('overlay');
+  const panel = document.getElementById('permissionPanel');
+  const actionBtn = document.getElementById('permActionBtn');
+  const hint = document.getElementById('permHint');
+  const title = document.getElementById('permTitle');
+  const desc = document.getElementById('permDesc');
+
+  // 先隐藏编辑面板（如果有的话）
+  const editPanel = document.getElementById('editPanel');
+  editPanel.classList.remove('active');
+
+  if (reason === 'denied') {
+    title.textContent = '通知已被关闭';
+    desc.textContent = '之前拒绝了通知权限，需要手动开启。\n特别关心事件的倒计时提醒需要通知功能。';
+    actionBtn.textContent = '重新开启通知';
+    actionBtn.classList.add('btn-outline');
+    hint.classList.remove('hidden');
+  } else {
+    title.textContent = '开启通知';
+    desc.innerHTML = '开启通知后，特别关心事件会在<br>倒计时个位为 0 的天数提醒你';
+    actionBtn.textContent = '允许通知';
+    actionBtn.classList.remove('btn-outline');
+    hint.classList.add('hidden');
+  }
+
+  overlay.classList.add('active');
+  panel.classList.add('active');
+}
+
+/**
+ * 隐藏通知权限面板
+ */
+function hidePermissionPanel() {
+  document.getElementById('overlay').classList.remove('active');
+  document.getElementById('permissionPanel').classList.remove('active');
+}
+
+/**
+ * 权限面板按钮处理
+ */
+async function handlePermAction() {
+  const currentPerm = getNotificationPermission();
+
+  if (currentPerm === 'denied') {
+    // 已经拒绝了，再次尝试请求（用户可能已经去设置中开启了）
+    // Notification.requestPermission() 在 denied 状态下不会弹窗，直接返回 denied
+    // 所以引导用户去设置，然后关闭面板，让用户再点铃铛测试
+    showToast('请先在浏览器站点设置中允许通知，再回来点击🔔测试');
+    hidePermissionPanel();
+    return;
+  }
+
+  // 'default' 状态：调用浏览器原生弹窗
+  const perm = await requestNotificationPermission();
+  if (perm === 'granted') {
+    hidePermissionPanel();
+    // 权限获取成功，发送测试通知
+    await sendTestNotificationInner();
+  }
+  // denied → requestNotificationPermission 内部会更新面板为 denied 模式
+}
+
+/**
+ * 发送测试通知的内部实现（不发权限面板）
+ */
+async function sendTestNotificationInner() {
   console.log('[测试通知] ========== 开始 ==========');
   console.log('[测试通知] Notification API 可用:', 'Notification' in window);
   console.log('[测试通知] 当前权限:', Notification.permission);
   console.log('[测试通知] SW 注册状态:', swRegistration ? '已就绪' : '未注册');
 
-  // 第一步：检查/请求权限
-  if (getNotificationPermission() !== 'granted') {
-    console.log('[测试通知] 权限未授予，开始请求...');
-    const perm = await requestNotificationPermission();
-    if (perm !== 'granted') {
-      console.log('[测试通知] 权限请求失败，退出');
-      return;
-    }
-    console.log('[测试通知] 权限已获取');
-  }
-
-  // 第二步：确保 SW 就绪
+  // 确保 SW 就绪
   if (!swRegistration) {
     console.log('[测试通知] 获取 SW 注册...');
     try {
@@ -671,7 +720,7 @@ async function sendTestNotification() {
     }
   }
 
-  // 第三步：发送测试通知
+  // 发送测试通知
   const now = new Date();
   const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -695,6 +744,22 @@ async function sendTestNotification() {
     showToast('❌ 发送失败：' + e.message);
   }
   console.log('[测试通知] ========== 结束 ==========');
+}
+
+/**
+ * 发送测试通知（点击铃铛按钮时调用）
+ * 如果权限未授予，先弹出权限面板
+ */
+async function sendTestNotification() {
+  console.log('[测试通知] 当前权限:', Notification.permission);
+
+  if (getNotificationPermission() !== 'granted') {
+    console.log('[测试通知] 权限未授予，显示权限面板');
+    showPermissionPanel(Notification.permission === 'denied' ? 'denied' : 'default');
+    return;
+  }
+
+  await sendTestNotificationInner();
 }
 
 /**
@@ -922,8 +987,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // FAB 添加按钮
   document.getElementById('fabAdd').addEventListener('click', openAddPanel);
 
-  // 面板关闭
-  document.getElementById('overlay').addEventListener('click', hidePanel);
+  // 面板关闭（编辑面板 / 权限面板）
+  document.getElementById('overlay').addEventListener('click', () => {
+    hidePanel();
+    hidePermissionPanel();
+  });
   document.getElementById('cancelBtn').addEventListener('click', hidePanel);
   document.getElementById('cancelBtn2').addEventListener('click', hidePanel);
 
@@ -986,6 +1054,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 测试通知按钮
   document.getElementById('notifyTestBtn').addEventListener('click', sendTestNotification);
+
+  // 通知权限面板按钮
+  document.getElementById('permActionBtn').addEventListener('click', handlePermAction);
+  document.getElementById('permSkipBtn').addEventListener('click', hidePermissionPanel);
 
   // 启动应用
   init();

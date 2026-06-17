@@ -749,6 +749,103 @@ body {
   background: var(--danger-light);
 }
 
+.btn-outline {
+  background: white;
+  color: var(--primary-500);
+  border: 2px solid var(--primary-200);
+}
+
+.btn-outline:active {
+  background: var(--primary-50);
+}
+
+/* ==================== 通知权限面板 ==================== */
+.permission-panel {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%) translateY(100%);
+  width: 100%;
+  max-width: 500px;
+  background: var(--card-bg);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding: 12px 24px calc(28px + var(--safe-bottom));
+  box-shadow: var(--shadow-panel);
+  z-index: 1001;
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.permission-panel.active {
+  transform: translateX(-50%) translateY(0);
+}
+
+.permission-icon {
+  font-size: 3rem;
+  margin: 16px 0 8px;
+  animation: bellShake 0.6s ease-in-out;
+}
+
+@keyframes bellShake {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(15deg); }
+  40% { transform: rotate(-12deg); }
+  60% { transform: rotate(8deg); }
+  80% { transform: rotate(-5deg); }
+}
+
+.permission-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.permission-desc {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.permission-btn {
+  width: 100%;
+  max-width: 280px;
+  padding: 12px 0;
+  font-size: 1rem;
+  margin-bottom: 12px;
+}
+
+.permission-hint {
+  font-size: 0.82rem;
+  color: var(--text-hint);
+  line-height: 1.7;
+  background: var(--primary-50);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.permission-skip {
+  background: none;
+  border: none;
+  color: var(--text-hint);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 8px 16px;
+  transition: color 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.permission-skip:active {
+  color: var(--text-secondary);
+}
+
 /* ==================== Toast 提示 ==================== */
 .toast {
   position: fixed;

@@ -71,7 +71,7 @@
     </section>
 
     <!-- 版本号 -->
-    <div class="version-info" id="versionInfo">v1.6</div>
+    <div class="version-info" id="versionInfo">v1.7</div>
   </main>
 
   <!-- ==================== FAB 添加按钮 ==================== -->
@@ -168,6 +168,21 @@
         <button class="btn btn-danger hidden" id="deleteBtn">删除</button>
       </div>
     </div>
+  </div>
+
+  <!-- ==================== 通知权限面板 ==================== -->
+  <div class="permission-panel" id="permissionPanel">
+    <div class="panel-handle"></div>
+    <div class="permission-icon">🔔</div>
+    <div class="permission-title" id="permTitle">开启通知</div>
+    <div class="permission-desc" id="permDesc">
+      开启通知后，特别关心事件会在<br>倒计时个位为 0 的天数提醒你
+    </div>
+    <button class="btn btn-primary permission-btn" id="permActionBtn">开启通知</button>
+    <div class="permission-hint hidden" id="permHint">
+      请到浏览器站点设置中开启通知：<br>地址栏左侧 🔒 → 通知 → 允许
+    </div>
+    <button class="permission-skip" id="permSkipBtn">暂不开启</button>
   </div>
 
   <!-- ==================== Toast ==================== -->
