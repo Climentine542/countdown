@@ -3,7 +3,7 @@
  * 缓存策略：Cache First（优先缓存，离线可用）
  */
 
-const CACHE_NAME = 'countdown-v4';
+const CACHE_NAME = 'countdown-v5';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
