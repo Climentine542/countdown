@@ -3,7 +3,7 @@
  * 缓存策略：Cache First（优先缓存，离线可用）
  */
 
-const CACHE_NAME = 'countdown-v6';
+const CACHE_NAME = 'countdown-v7';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -40,17 +40,23 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// 请求拦截：缓存优先，网络回退
+// 判断是否为 HTML 请求
+function isHtmlRequest(request) {
+  return request.headers.get('accept')?.includes('text/html') ||
+         request.destination === 'document';
+}
+
+// 请求拦截：HTML 网络优先，其他资源缓存优先
 self.addEventListener('fetch', (event) => {
-  // 跳过非 GET 请求和 chrome-extension 等
   if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith('http')) return;
 
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // 缓存命中，同时后台更新缓存
-        const fetchPromise = fetch(event.request).then((networkResponse) => {
+  // HTML 请求：网络优先（确保总是最新版本），网络失败时回退到缓存
+  if (isHtmlRequest(event.request)) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          // 网络成功，更新缓存
           if (networkResponse && networkResponse.ok) {
             const cloned = networkResponse.clone();
             caches.open(CACHE_NAME).then((cache) => {
@@ -58,11 +64,27 @@ self.addEventListener('fetch', (event) => {
             });
           }
           return networkResponse;
-        }).catch(() => {
-          // 网络失败，使用缓存（已经返回了）
-        });
+        })
+        .catch(() => {
+          // 网络失败，使用缓存
+          return caches.match(event.request);
+        })
+    );
+    return;
+  }
 
-        // 不等待后台更新
+  // 非 HTML 请求：缓存优先，网络回退
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        // 后台更新缓存
+        fetch(event.request).then((networkResponse) => {
+          if (networkResponse && networkResponse.ok) {
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, networkResponse.clone());
+            });
+          }
+        }).catch(() => {});
         return cachedResponse;
       }
 
@@ -76,10 +98,6 @@ self.addEventListener('fetch', (event) => {
         }
         return networkResponse;
       }).catch(() => {
-        // 网络也失败，返回离线页面（对于 HTML 请求）
-        if (event.request.headers.get('accept')?.includes('text/html')) {
-          return caches.match('./index.html');
-        }
         return new Response('离线状态，请连接网络后重试', {
           status: 503,
           statusText: 'Service Unavailable',

@@ -534,39 +534,50 @@ function getNotificationPermission() {
  * 请求通知权限（必须在用户手势中调用）
  */
 async function requestNotificationPermission() {
+  console.log('[通知] 开始请求权限，当前状态:', Notification.permission);
+
   if (!('Notification' in window)) {
-    console.log('此浏览器不支持通知');
-    showToast('此浏览器不支持通知功能');
+    console.log('[通知] 此浏览器不支持 Notification API');
+    alert('此浏览器不支持通知功能');
     return 'denied';
   }
 
   // 如果已经授权，直接返回
   if (Notification.permission === 'granted') {
     notificationPermission = 'granted';
+    console.log('[通知] 权限已授予');
     return 'granted';
   }
 
   // 如果是 denied，引导用户去设置中开启
   if (Notification.permission === 'denied') {
-    console.log('通知权限已被拒绝，请到浏览器设置中开启');
-    showToast('通知权限已被拒绝，请到系统设置中为浏览器开启通知权限');
+    console.log('[通知] 权限已被拒绝');
+    showToast('⚠️ 通知权限已被拒绝');
+    // 延迟弹窗，让 toast 先显示
+    setTimeout(() => {
+      alert('通知权限已被拒绝。\n\n请在系统设置中为浏览器开启通知权限：\n设置 → 应用 → 浏览器 → 通知 → 允许');
+    }, 300);
     return 'denied';
   }
 
   // 只有 'default' 状态才能请求
   try {
+    console.log('[通知] 调用 Notification.requestPermission()...');
     const permission = await Notification.requestPermission();
     notificationPermission = permission;
-    console.log(`通知权限请求结果: ${permission}`);
+    console.log(`[通知] 请求结果: ${permission}`);
     if (permission === 'granted') {
       showToast('✅ 通知权限已开启');
     } else if (permission === 'denied') {
-      showToast('❌ 通知权限被拒绝，请到系统设置中开启');
+      showToast('❌ 通知权限被拒绝');
+      setTimeout(() => {
+        alert('通知权限被拒绝。\n\n如需开启，请到系统设置中修改：\n设置 → 应用 → 浏览器 → 通知 → 允许');
+      }, 300);
     }
     return permission;
   } catch (err) {
-    console.error('请求通知权限失败:', err);
-    showToast('请求通知权限失败，请重试');
+    console.error('[通知] requestPermission 异常:', err);
+    alert('请求通知权限失败：' + err.message + '\n\n请检查浏览器是否支持通知功能。');
     return 'denied';
   }
 }
@@ -608,7 +619,6 @@ async function sendNotification(event, days) {
     renotify: true,
     requireInteraction: days === 0,
     vibrate: [200, 100, 200],
-    // 以下选项让通知在锁屏/通知中心更显眼
     silent: false,
     data: {
       eventId: event.id,
@@ -629,31 +639,44 @@ async function sendNotification(event, days) {
 
 /**
  * 发送测试通知（点击铃铛按钮时调用）
+ * 这是诊断通知问题的入口函数
  */
 async function sendTestNotification() {
-  // 先检查/请求权限
+  console.log('[测试通知] ========== 开始 ==========');
+  console.log('[测试通知] Notification API 可用:', 'Notification' in window);
+  console.log('[测试通知] 当前权限:', Notification.permission);
+  console.log('[测试通知] SW 注册状态:', swRegistration ? '已就绪' : '未注册');
+
+  // 第一步：检查/请求权限
   if (getNotificationPermission() !== 'granted') {
+    console.log('[测试通知] 权限未授予，开始请求...');
     const perm = await requestNotificationPermission();
     if (perm !== 'granted') {
+      console.log('[测试通知] 权限请求失败，退出');
       return;
     }
+    console.log('[测试通知] 权限已获取');
   }
 
-  // 确保 SW 就绪
+  // 第二步：确保 SW 就绪
   if (!swRegistration) {
+    console.log('[测试通知] 获取 SW 注册...');
     try {
       swRegistration = await navigator.serviceWorker.ready;
+      console.log('[测试通知] SW 已就绪:', swRegistration.scope);
     } catch (e) {
-      console.error('无法获取 Service Worker:', e);
-      showToast('通知服务未就绪，请刷新页面后重试');
+      console.error('[测试通知] SW 获取失败:', e);
+      showToast('❌ 通知服务未就绪，请刷新页面后重试');
       return;
     }
   }
 
+  // 第三步：发送测试通知
   const now = new Date();
   const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   try {
+    console.log('[测试通知] 调用 showNotification...');
     await swRegistration.showNotification('🔔 测试通知', {
       body: `倒计时应用通知功能正常！\n发送时间：${timeStr}`,
       icon: 'icon.svg',
@@ -665,12 +688,13 @@ async function sendTestNotification() {
       silent: false,
       data: { isTest: true },
     });
+    console.log('[测试通知] ✅ 发送成功');
     showToast('✅ 测试通知已发送，请查看通知中心');
-    console.log('测试通知已发送');
   } catch (e) {
-    console.error('测试通知发送失败:', e);
+    console.error('[测试通知] ❌ 发送失败:', e);
     showToast('❌ 发送失败：' + e.message);
   }
+  console.log('[测试通知] ========== 结束 ==========');
 }
 
 /**
